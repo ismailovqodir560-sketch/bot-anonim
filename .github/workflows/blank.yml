@@ -1,0 +1,84 @@
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+
+# Bot tokeni
+TOKEN = "8682805466:AAEyeDJRie0ywsUh39d7pBfDULj7tmumstE"
+# Adminlar ID raqami
+ADMIN_IDS = [7021750403, 1308623372]
+
+# Xotirada saqlash
+message_map = {}
+
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# 1. Start komandasi
+@dp.message(Command("start"))
+async def start_cmd(message: types.Message):
+    if message.from_user.id in ADMIN_IDS:
+        await message.answer("Xush kelibsiz, Admin! 🛠\nFoydalanuvchilardan xabar kelsa, ularga javob berish uchun 'Reply' qiling.")
+    else:
+        await message.answer(
+            "**Art Glass anonim aloqa botiga xush kelibsiz!** 😊\n\n"
+            "Shunchaki xabaringizni yozib yuboring, u raxbariyatga anonim tarzda yetkaziladi.",
+            parse_mode="Markdown"
+        )
+
+# 2. Admin javob berishi (Reply orqali) - BU QATORNI YUQORIGA QO'YAMIZ
+@dp.message(F.reply_to_message)
+async def handle_admin_reply(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    reply_id = message.reply_to_message.message_id
+    
+    if reply_id in message_map:
+        user_id = message_map[reply_id]
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"📢 **Raxbariyatdan javob:**\n\n{message.text}"
+            )
+            await message.answer("✅ Javobingiz foydalanuvchiga yuborildi.")
+        except Exception as e:
+            await message.answer("❌ Xabar yuborilmadi (Foydalanuvchi botni bloklagan).")
+    else:
+        await message.answer("❌ Bu xabar tizimda topilmadi (Bot o'chib yongan bo'lishi mumkin).")
+
+# 3. Murojaat yuborish (Faqat foydalanuvchilar uchun)
+@dp.message(F.chat.type == "private", F.text, ~F.text.startswith("/"))
+async def handle_user_message(message: types.Message):
+    # Agar admin o'z-o'ziga (Reply qilmasdan) yozsa, unga xabar yubormaymiz
+    if message.from_user.id in ADMIN_IDS:
+        await message.answer("Siz adminsiz. Foydalanuvchiga javob yozish uchun uning xabariga 'Reply' qiling.")
+        return
+
+    sent_to_admins = 0
+    for admin_id in ADMIN_IDS:
+        try:
+            admin_msg = await bot.send_message(
+                chat_id=admin_id,
+                text=f"📩 **Yangi anonim murojaat:**\n\n{message.text}\n\n"
+                     f"ℹ️ _Javob berish uchun 'Reply' qiling._"
+            )
+            message_map[admin_msg.message_id] = message.from_user.id
+            sent_to_admins += 1
+        except Exception as e:
+            logging.error(f"Admin {admin_id} ga yuborishda xato: {e}")
+
+    if sent_to_admins > 0:
+        await message.answer("Raxmat! Xabaringiz anonim tarzda yuborildi. ✅")
+
+async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("Art Glass boti filtrlar bilan ishga tushdi...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
